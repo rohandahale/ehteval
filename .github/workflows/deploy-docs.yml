@@ -36,8 +36,10 @@ jobs:
         with:
           node-version: '22.x'
       - name: Install dependencies
+        working-directory: ./ehteval/docs 
         run: yarn install --forzen-lockfile --non-interactive
       - name: Build
+        working-directory: ./ehteval/docs 
         run: yarn build
       - name: Setup Pages
         uses: actions/configure-pages@v1

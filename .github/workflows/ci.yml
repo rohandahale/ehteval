@@ -36,6 +36,9 @@ jobs:
 
   deploy-docs:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      statuses: write
     needs: test  # Ensure docs are deployed only if tests pass
     if: ${{ success() }}  # Only run if the tests pass
     steps:
@@ -47,6 +50,9 @@ jobs:
         with:
           node-version: 22  # Use a compatible Node.js version
           cache: 'npm'
+        
+      - name: Install npm
+        run: npm install
 
       - name: Install npm dependencies
         run: npm ci

@@ -61,11 +61,3 @@ exclude_lines = [
   "if __name__ == .__main__.:",
   "if TYPE_CHECKING:",
 ]
-
-[tool.hatch.envs.docs]
-dependencies = []
-scripts = {
-    serve = "npm --prefix docs run start",
-    build = "npm --prefix docs run build",
-    deploy = "npm --prefix docs run deploy"
-}

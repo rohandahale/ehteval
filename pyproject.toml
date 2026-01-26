@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sgra-dynamics-evaluation"
+name = "ehteval"
 version = "0.1.0"
 description = "Evaluation tools for black hole video reconstructions for real and synthetic VLBI data"
 readme = "README.md"
@@ -53,10 +53,10 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rohandahale/sgra-dynamics-evaluation"
-Documentation = "https://rohandahale.github.io/sgra-dynamics-evaluation/"
-Repository = "https://github.com/rohandahale/sgra-dynamics-evaluation"
-Issues = "https://github.com/rohandahale/sgra-dynamics-evaluation/issues"
+Homepage = "https://github.com/rohandahale/ehteval"
+Documentation = "https://rohandahale.github.io/ehteval/"
+Repository = "https://github.com/rohandahale/ehteval"
+Issues = "https://github.com/rohandahale/ehteval/issues"
 
 
 [tool.setuptools]

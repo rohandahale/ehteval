@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.abspath("../src"))
 
 # -- Project information -----------------------------------------------------
-project = "Sgr A* Dynamics Evaluation"
+project = "Black Hole Video Evaluation"
 copyright = "2025, Rohan Dahale"
 author = "Rohan Dahale"
 version = "0.1.0"
@@ -86,13 +86,13 @@ html_theme_options = {
     "sidebar_hide_name": False,
     "navigation_with_keys": True,
     "top_of_page_button": "edit",
-    "source_repository": "https://github.com/rohandahale/sgra-dynamics-evaluation",
+    "source_repository": "https://github.com/rohandahale/ehteval",
     "source_branch": "main",
     "source_directory": "docs/",
 }
 
-html_title = "Sgr A* Dynamics Evaluation"
-html_short_title = "SgrA Eval"
+html_title = "Black Hole Video Evaluation"
+html_short_title = "Black Hole Video Evaluation"
 
 # Static files (custom CSS, images, etc.)
 html_static_path = ["_static"]

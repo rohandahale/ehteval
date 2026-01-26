@@ -1,7 +1,5 @@
-.. Sgr A* Dynamics Evaluation documentation master file
-
 ======================================
-Sgr A* Dynamics Evaluation
+Black Hole Video Evaluation
 ======================================
 
 .. image:: https://img.shields.io/badge/python-3.9+-blue.svg

@@ -1,7 +1,7 @@
 # Evaluation and validation scripts for black hole video reconstructions
 
-[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://rohandahale.github.io/sgra-dynamics-evaluation/)
-[![PyPI version](https://img.shields.io/pypi/v/sgra-dynamics-evaluation.svg)](https://pypi.org/project/sgra-dynamics-evaluation/)
+[![Documentation](https://img.shields.io/badge/docs-GitHub%20Pages-blue.svg)](https://rohandahale.github.io/ehteval/)
+[![PyPI version](https://img.shields.io/pypi/v/ehteval.svg)](https://pypi.org/project/ehteval/)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -9,7 +9,7 @@ A unified driver to automate the evaluation pipeline for Sgr A* Dynamics project
 
 ## Documentation
 
-📚 **[Read the full documentation →](https://rohandahale.github.io/sgra-dynamics-evaluation/)**
+📚 **[Read the full documentation →](https://rohandahale.github.io/ehteval/)**
 
 ## Installation
 
@@ -18,8 +18,8 @@ A unified driver to automate the evaluation pipeline for Sgr A* Dynamics project
 Create and activate the conda environment using the provided `environment.yml`:
 
 ```bash
-git clone https://github.com/rohandahale/sgra-dynamics-evaluation.git
-cd sgra-dynamics-evaluation
+git clone https://github.com/rohandahale/ehteval.git
+cd ehteval
 conda env create -f environment.yml
 conda activate evaluation
 ```

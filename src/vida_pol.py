@@ -4,6 +4,7 @@
 
 import os
 import sys
+import re
 import warnings
 import numpy as np
 import pandas as pd
@@ -47,16 +48,23 @@ def create_parser():
     p.add_argument('--tstart', type=float, default=None, help='Start time (in UT hours) for data')
     p.add_argument('--tstop', type=float, default=None, help='Stop time (in UT hours) for data')
     p.add_argument('-n', '--ncores', type=int, default=32, help='Total number of cores to use')
-    p.add_argument('--blur', type=float, default=0.0, help='Blur (fwhm) in microarcseconds')
+    p.add_argument('--blur', type=float, default=0.0, help='Blur (fwhm) in microarcseconds for reconstructions')
+    p.add_argument('--blur-truth', type=float, default=0.0, help='Blur (fwhm) in microarcseconds for truth only')
     p.add_argument('--no-regrid', action='store_true', help='Disable regridding of image before fitting')
     p.add_argument('--maxiters', type=int, default=20000, help='Maximum iterations for VIDA optimizer')
     p.add_argument('--stride', type=int, default=10, help='Stride for checkponting and parallel batching (Julia)')
     return p
 
 def kill_julia_process():
-    """Kills any existing vida_pol.jl processes to free memory."""
+    """Kills any existing vida_pol.jl processes AND orphaned Julia workers to free memory."""
     try:
+        # Kill the main vida_pol.jl process
         subprocess.run(["pkill", "-f", "vida_pol.jl"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Kill orphaned Julia worker processes spawned by Distributed.addprocs()
+        subprocess.run(["pkill", "-f", "julia.*--worker"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Give processes time to terminate
+        import time
+        time.sleep(2)
     except Exception:
         pass
 
@@ -200,10 +208,10 @@ def main():
     truth_csv = None
     if args.truthmv:
         print("Processing truth movie...")
-        truth_csv = args.outpath + "_truth.csv"
+        truth_csv = args.outpath + "_vida_truth.csv"
         # Sequential run, use full ncores for julia
         if not os.path.exists(truth_csv):
-             run_julia_on_temp(args.truthmv, truth_csv, times, procs=args.ncores, blur=args.blur, no_regrid=args.no_regrid, maxiters=args.maxiters, stride=args.stride)
+             run_julia_on_temp(args.truthmv, truth_csv, times, procs=args.ncores, blur=args.blur_truth, no_regrid=args.no_regrid, maxiters=args.maxiters, stride=args.stride)
         else:
             print(truth_csv)
             print("Truth CSV exists, skipping.")
@@ -212,9 +220,15 @@ def main():
     tasks = []
     
     for i, f in enumerate(input_files):
-        # Create a unique csv name
+        # Extract snapshot number (e.g., '049') from filename like '..._049.hdf5'
         base = os.path.basename(f).replace('.hdf5', '').replace('.h5', '')
-        csv_name = f"{args.outpath}_{base}_{i}.csv" 
+        match = re.search(r'_(\d+)$', base)
+        if match:
+            snap_num = match.group(1)
+            csv_name = f"{args.outpath}_vida_{snap_num}.csv"
+        else:
+            # Fallback: use index if no snapshot number found
+            csv_name = f"{args.outpath}_vida_{i}.csv"
         tasks.append((f, csv_name))
 
     results_csvs = []

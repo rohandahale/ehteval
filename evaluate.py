@@ -73,6 +73,7 @@ def main():
     # Optional Time Range
     tstart = config.get('tstart') 
     tstop = config.get('tstop')
+    noise = config.get('noise')
     
     # Overwrite Flag
     overwrite = config.get('overwrite', False)
@@ -92,12 +93,7 @@ def main():
         # Use truth only if model is NOT one of the SGRA variants
         use_truth_for_model = model not in sgra_variants
         
-        # Create model-specific subfolder
-        model_results_dir = os.path.join(results_dir, model)
-        if not os.path.exists(model_results_dir):
-            os.makedirs(model_results_dir)
-        
-        out_prefix = os.path.join(model_results_dir, f"{model}_{pipeline}")
+        out_prefix = os.path.join(results_dir, f"{model}_{pipeline}")
         
         # 2. File Paths construction
         
@@ -267,8 +263,8 @@ def main():
 
         # e2) Pattern Speed v2
         if config['run_steps'].get('patternspeed_v2', False):
-            # Create subfolder inside model results directory
-            v2_dir = os.path.join(model_results_dir, "patternspeed_v2")
+            # Create subfolder inside results directory
+            v2_dir = os.path.join(results_dir, "patternspeed_v2")
             if not os.path.exists(v2_dir):
                 os.makedirs(v2_dir)
             
@@ -293,7 +289,9 @@ def main():
             if not overwrite and os.path.exists(f"{out_prefix}_vida.csv"):
                 print(f"Skipping VIDA Pol: Output {out_prefix}_vida.csv already exists.")
             else:
-                cmd = build_cmd('vida_pol.py', input_arg, out_prefix, use_truth=use_truth_for_model)
+                vida_blur = config.get('vida_pol_blur', 0.0)
+                vida_extra_args = ['--blur-truth', str(vida_blur)]
+                cmd = build_cmd('vida_pol.py', input_arg, out_prefix, use_truth=use_truth_for_model, extra_args=vida_extra_args)
                 run_command(cmd, "VIDA Polarization Extraction")
 
              

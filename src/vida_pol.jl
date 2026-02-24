@@ -374,6 +374,11 @@ function main()
                                         order=order, 
                                         maxiters=fevals,
                                         cfluxdiam = μas2rad(80.0))
+             # Free intermediate images on worker to prevent memory buildup
+             cimg = nothing
+             rimg = nothing
+             img = nothing
+             GC.gc()
              return stats
         end
         
@@ -382,9 +387,17 @@ function main()
         df = vcat(df, dftmp)
         CSV.write(outname, df)
         
-        # Manually trigger garbage collection to free memory
+        # Trigger garbage collection on main process and all workers
         GC.gc()
+        @sync for w in workers()
+            @async remotecall_wait(GC.gc, w)
+        end
     end
+
+    # Properly remove worker processes to free memory
+    @info "Cleaning up worker processes..."
+    rmprocs(workers()...)
+    GC.gc()
 end
 
 

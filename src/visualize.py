@@ -14,6 +14,7 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 import time
 import ehtim as eh
+import ehtplot
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
@@ -158,7 +159,14 @@ def get_tb(frame_data):
 # --- Parallel Rendering Functions ---
 
 def render_total_frame(args):
-    idx, recon_frame, truth_frame, time_val, fov, max_I, max_dyn, tmp_dir = args
+    # Support both 8-tuple (legacy) and 9-tuple (with label)
+    if len(args) == 9:
+        idx, recon_frame, truth_frame, time_val, fov, max_I, max_dyn, tmp_dir, label = args
+    else:
+        idx, recon_frame, truth_frame, time_val, fov, max_I, max_dyn, tmp_dir = args
+        label = 'Reconstruction'
+    
+    if label is None: label = 'Reconstruction'
     
     has_truth = truth_frame is not None
     nrows = 2 if has_truth else 1
@@ -171,10 +179,10 @@ def render_total_frame(args):
         axes = np.array([axes])
         
     if has_truth:
-        row_labels = ['Truth', 'Reconstruction']
+        row_labels = ['Truth', label]
         datasets = [truth_frame, recon_frame]
     else:
-        row_labels = ['Reconstruction']
+        row_labels = [label]
         datasets = [recon_frame]
         
     col_labels = ['Total', 'Dynamic', 'Static']
@@ -192,7 +200,7 @@ def render_total_frame(args):
         tb_factor = get_tb(d)
         
         # Total
-        im_tot = axes[i, 0].imshow(d['total']['I'] * tb_factor, cmap='afmhot', vmin=0, vmax=max_I, extent=lims)
+        im_tot = axes[i, 0].imshow(d['total']['I'] * tb_factor, cmap='afmhot_us', vmin=0, vmax=max_I, extent=lims)
         
         # Dynamic
         dyn_data = d['dynamic']['I'] * tb_factor
@@ -205,7 +213,7 @@ def render_total_frame(args):
             axes[i, 1].contour(np.abs(truth_dyn), levels=levels, extent=lims, colors='black', alpha=0.7, linewidths=1, origin='upper')
         
         # Static
-        im_stat = axes[i, 2].imshow(d['static']['I'] * tb_factor, cmap='afmhot', vmin=0, vmax=max_I, extent=lims)
+        im_stat = axes[i, 2].imshow(d['static']['I'] * tb_factor, cmap='afmhot_us', vmin=0, vmax=max_I, extent=lims)
         
         # Colorbars
         if i == nrows - 1:
@@ -275,7 +283,14 @@ def plot_vectors(ax, I, Q, U, cmap_bg='binary', vmin=None, vmax=None, is_dynamic
     return q, im
 
 def render_lp_frame(args):
-    idx, recon_frame, truth_frame, time_val, fov, max_I, max_dyn, tmp_dir = args
+    # Support both 8-tuple (legacy) and 9-tuple (with label)
+    if len(args) == 9:
+        idx, recon_frame, truth_frame, time_val, fov, max_I, max_dyn, tmp_dir, label = args
+    else:
+        idx, recon_frame, truth_frame, time_val, fov, max_I, max_dyn, tmp_dir = args
+        label = 'Reconstruction'
+    
+    if label is None: label = 'Reconstruction'
     
     has_truth = truth_frame is not None
     nrows = 2 if has_truth else 1
@@ -288,10 +303,10 @@ def render_lp_frame(args):
         axes = np.array([axes])
         
     if has_truth:
-        row_labels = ['Truth', 'Reconstruction']
+        row_labels = ['Truth', label]
         datasets = [truth_frame, recon_frame]
     else:
-        row_labels = ['Reconstruction']
+        row_labels = [label]
         datasets = [recon_frame]
         
     col_labels = ['Total', 'Dynamic', 'Static']
@@ -354,7 +369,7 @@ def render_lp_frame(args):
     plt.close(fig)
     return fname
 
-def generate_gif_parallel(render_func, recon_data, truth_data, times, outpath, fps, fov, ncores, suffix):
+def generate_gif_parallel(render_func, recon_data, truth_data, times, outpath, fps, fov, ncores, suffix, label='Reconstruction'):
     print(f"Generating {suffix} GIF in parallel...")
     
     # Calculate limits first
@@ -384,7 +399,7 @@ def generate_gif_parallel(render_func, recon_data, truth_data, times, outpath, f
     for i, t in enumerate(times):
         r_frame = recon_data[i]
         t_frame = truth_data[i] if truth_data else None
-        tasks.append((i, r_frame, t_frame, t, fov, max_I, max_dyn, tmp_dir))
+        tasks.append((i, r_frame, t_frame, t, fov, max_I, max_dyn, tmp_dir, label))
         
     # Run parallel rendering
     pool = multiprocessing.Pool(processes=ncores)
@@ -461,7 +476,7 @@ def compute_variance_parallel(frames_data, uv_points, fov, npix, ncores=1):
     
     return (var_amp_I, var_phase_I), (var_amp_Q, var_phase_Q), (var_amp_U, var_phase_U), (var_amp_P, var_phase_P)
 
-def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
+def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores, label='Reconstruction'):
     print("Plotting Visibility Variance...")
     
     U = np.linspace(-10.0e9, 10.0e9, npix)
@@ -521,7 +536,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
         # Determine max/min for the row
         vmin = 0
         vmax = 1
-        cmap = 'binary'
+        cmap = 'binary_us'
         
         if has_truth:
             if i < 2: # Amp Rows (Truth, Recon)
@@ -530,7 +545,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
                     all_amp.append(t_vars[j][0])
                     all_amp.append(r_vars[j][0])
                 vmax = np.max([np.max(d[mask]) for d in all_amp])
-                cmap = 'binary'
+                cmap = 'binary_us'
             
             elif i < 4: # Phase Rows (Truth, Recon)
                 all_phase = []
@@ -578,7 +593,7 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
             if i == 0:
                 all_amp = [r_vars[j][0] for j in range(ncols)]
                 vmax = np.max([np.max(d[mask]) for d in all_amp])
-                cmap = 'binary'
+                cmap = 'binary_us'
             else:
                 all_phase = [r_vars[j][1] for j in range(ncols)]
                 vmax = np.max([np.max(d[mask]) for d in all_phase])
@@ -623,11 +638,11 @@ def plot_variance(recon_data, truth_data, obs, outpath, fov, npix, ncores):
                 ax.set_title(col_names[j], fontsize=18)
             if j == 0:
                 if has_truth:
-                    lbls = ['Truth Amp Var', 'Recon Amp Var', 
-                            'Truth Phase Var', 'Recon Phase Var', 
-                            'Log10(R/T) Amp', 'Log10(R/T) Phase'] 
+                    lbls = ['Truth Amp Var', f'{label} Amp Var', 
+                            'Truth Phase Var', f'{label} Phase Var', 
+                            f'Log10({label[0]}/T) Amp', f'Log10({label[0]}/T) Phase'] 
                 else:
-                    lbls = ['Recon Amp Var', 'Recon Phase Var']
+                    lbls = [f'{label} Amp Var', f'{label} Phase Var']
                 ax.set_ylabel(lbls[i], fontsize=14)
                 
             ax.plot(u_obs/1e9, v_obs/1e9, '.', color='tab:orange', alpha=0.3) # Lowered alpha for better visibility

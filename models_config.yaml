@@ -1,0 +1,287 @@
+# ============================================================
+# Model Generation Configuration
+# ============================================================
+# This file specifies all parameters for reproducible model
+# generation. Save this alongside your model outputs.
+# ============================================================
+
+# ─── Global Seeds ────────────────────────────────────────────
+seeds:
+  model_generation: 42    # seed for stochastic model components (e.g. GRMHD randomness)
+
+# ─── Observation Reference ───────────────────────────────────
+observation:
+  epoch: "3601"
+  mjd: 57854
+  uvfits_dir: "./realdata"
+  uvfits_files:
+    LO: "hops_3601_SGRA_LO_netcal_LMTcal_10s_ALMArot_JCcalDouble_dcal.uvfits"
+    HI: "hops_3601_SGRA_HI_netcal_LMTcal_10s_ALMArot_JCcalDouble_dcal.uvfits"
+  array_file: "./arrays/EHT2017.txt"
+  bands: ["LO", "HI"]
+
+# ─── Time Configuration ─────────────────────────────────────
+time:
+  tstart: 9.001389026641846
+  tstop: 15.015277862548828
+  tshift: 0.0
+  besttime_start: 10.85
+  besttime_stop: 14.05
+
+# ─── Image Configuration ────────────────────────────────────
+image:
+  fov_uas: 200
+  npix: 200
+
+# ─── Polarization defaults (from April 11 SgrA* data) ───────
+polarization:
+  mbreve_mean: 0.2      # linear polarization fraction
+  vbreve_mean: 0.002    # circular polarization fraction
+
+# ─── YAML Anchors for shared model parameters ────────────────
+# These are not used directly — they provide reusable parameter
+# blocks to reduce duplication in the recipes below.
+_anchors:
+  mring_base: &mring_base
+    total_flux: 2.7
+    PA: 120
+    diameter_uas: 52
+    alpha_uas: 15
+    beta1_abs: 0.23
+    ring_radius_uas: 26
+    hs_fwhm_uas: 20
+
+# ─── Model Parameters ───────────────────────────────────────
+models:
+  # Models to generate (list of model names referenced in recipes)
+  generate:
+    - point
+    - ring
+    - disk
+    - edisk
+    - crescent
+    - double
+    - mring+hsCW
+    - mring+hsCCW
+    - mring-varbeta2
+    - mring+hsCW20
+    - mring+hsCW40
+    - mring+hsCW0.15
+    - mring+hsCW0.60
+    - mring+hsCW1.20
+    - mring+hs-cross
+    - mring+hs-not-center
+    - mring+hs-incoh
+    - mring+hs-pol
+
+  # Step-by-step construction of each model.
+  # Each recipe references a 'type' registered in generate_models.py.
+  recipes:
+
+    # ── Static Models (Test 1: Do methods introduce additional dynamics?) ──
+    point:
+      type: "point"                  # static point source (compact Gaussian + large disk background)
+      total_flux: 2.7
+      compact_fwhm_uas: 25
+      compact_flux_ratio: 0.25       # fraction of total flux in the compact Gaussian
+      disk_diameter_uas: 110
+      blur_uas: 15
+
+    ring:
+      type: "ring"                   # static simple ring with symmetric brightness
+      total_flux: 2.7
+      diameter_uas: 52
+      alpha_uas: 15
+      QU_shift: 1.5707963            # pi/2 — radial EVPA pattern (argbeta2=0)
+
+    disk:
+      type: "disk"                   # static uniform disk
+      total_flux: 2.7
+      disk_diameter_uas: 70
+      blur_uas: 15
+
+    edisk:
+      type: "edisk"                  # static eccentric disk
+      total_flux: 2.7
+      dradius: 40
+      blur_uas: 10
+      pangle_deg: 70
+      asymmetry: 0.8
+
+    crescent:
+      type: "crescent"               # static crescent with distinct polarization structure
+      total_flux: 2.7
+      diameter_uas: 52
+      alpha_uas: 15
+      beta1_abs: 0.23
+      PA: 120
+      QU_shift: 1.5707963            # pi/2 — radial EVPA pattern (argbeta2=0)
+
+    double:
+      type: "double"                 # static double source (two Gaussians)
+      total_flux: 2.7
+      separation_uas: 17.5
+      fwhm1_uas: 35
+      fwhm2_uas: 25
+      flux_ratio1: 0.583             # fraction of total flux in the first Gaussian
+
+    # ── Dynamic Models (Tests 2–5: Coherent/Incoherent motions & Polarization) ──
+    mring+hsCW:
+      <<: *mring_base
+      type: "mring_hs"               # m-ring with CW orbiting hotspot (80 min period)
+      hs_flux: 0.3
+      period_min: 80
+      direction: "CW"
+
+    mring+hsCCW:
+      <<: *mring_base
+      type: "mring_hs"               # CCW version — tests direction bias
+      hs_flux: 0.3
+      period_min: 80
+      direction: "CCW"
+
+    mring+hs-cross:
+      <<: *mring_base
+      type: "mring_hs_cross"         # hotspot oscillates linearly through ring center
+      hs_flux: 0.3
+      period_min: 90
+
+    mring+hs-not-center:
+      <<: *mring_base
+      type: "mring_hs_not_center"    # hotspot orbit displaced off-center
+      hs_flux: 0.3
+      hs_x_offset: -10
+      hs_y_offset: 10
+      period_min: 180
+      direction: "CW"
+
+    mring+hs-incoh:
+      <<: *mring_base
+      type: "mring_hs_incoh"         # hotspot jumps randomly — tests over-regularization
+      hs_flux: 0.3
+
+    mring+hs-pol:
+      <<: *mring_base
+      type: "mring_hs_pol"           # varying linear polarization (radial mring, tangential hs EVPA)
+      hs_flux: 0.3
+      period_min: 80
+      direction: "CW"
+      crescent_linpol: 0.05
+      crescent_circpol: 0.001
+      hs_linpol: 0.2
+      hs_circpol: 0.002
+
+    mring-varbeta2:
+      type: "varbeta2"               # rotating EVPA with 80 min period — tests polarization dynamics
+      total_flux: 2.7
+      PA: 120
+      diameter_uas: 52
+      alpha_uas: 15
+      beta1_abs: 0.23
+      varbeta_period_hr: 1.3333
+
+    # ── Speed variants (supplementary) ──
+    mring+hsCW20:
+      <<: *mring_base
+      type: "mring_hs"
+      hs_flux: 0.3
+      period_min: 20
+      direction: "CW"
+
+    mring+hsCW40:
+      <<: *mring_base
+      type: "mring_hs"
+      hs_flux: 0.3
+      period_min: 40
+      direction: "CW"
+
+    # ── Brightness variants (supplementary) ──
+    mring+hsCW0.15:
+      <<: *mring_base
+      type: "mring_hs"
+      hs_flux: 0.15
+      period_min: 80
+      direction: "CW"
+
+    mring+hsCW0.60:
+      <<: *mring_base
+      type: "mring_hs"
+      hs_flux: 0.60
+      period_min: 80
+      direction: "CW"
+
+    mring+hsCW1.20:
+      <<: *mring_base
+      type: "mring_hs"
+      hs_flux: 1.20
+      period_min: 80
+      direction: "CW"
+
+    # ── GRMHD Models (Test 6) ──
+    grmhd1:
+      type: "grmhd"                  # MAD, a*=+0.94, Rh=160, i=30deg
+      source_key: "grmhd1"
+      pa_rotate_deg: 250
+    grmhd2:
+      type: "grmhd"                  # MAD, a*=+0.5, Rh=160, i=150deg
+      source_key: "grmhd2"
+      pa_rotate_deg: 300
+    grmhd3:
+      type: "grmhd"
+      source_key: "grmhd3"
+    grmhd4:
+      type: "grmhd"
+      source_key: "grmhd4"
+    grmhd5:
+      type: "grmhd"
+      source_key: "grmhd5"
+    grmhd6:
+      type: "grmhd"
+      source_key: "grmhd6"
+    grmhd7:
+      type: "grmhd"
+      source_key: "grmhd7"
+    grmhd8:
+      type: "grmhd"                  # MAD, a*=+0.94, Rh=40, i=170deg
+      source_key: "grmhd8"
+
+    grmhd2+hs1:
+      type: "grmhd_hs"               # grmhd2 base with 0.3Jy CW orbiting hotspot
+      base_model: "grmhd2"
+      flux_subtract: 0.3
+      hs_flux: 0.3
+      hs_start_angle: 0
+      period_min: 80
+      direction: "CW"
+      ring_radius_uas: 26
+      hs_fwhm_uas: 20
+
+    grmhd2+hs2:
+      type: "grmhd_hs"               # same but hotspot starts at opposite side (180 deg offset)
+      base_model: "grmhd2"
+      flux_subtract: 0.3
+      hs_flux: 0.3
+      hs_start_angle: 180
+      period_min: 80
+      direction: "CW"
+      ring_radius_uas: 26
+      hs_fwhm_uas: 20
+
+  # GRMHD source paths (external HDF5 files — update for your system)
+  # These are GRMHD simulation movies in ehtim HDF5 format (ehtim.Movie.save_hdf5).
+  # They are NOT included in the repo due to file size (typically 1–10 GB each).
+  # Contact the data team or see the project wiki for acquisition instructions.
+  # Format: ehtim-compatible polarized movie HDF5 with Stokes I (and optionally Q,U,V).
+  grmhd_sources:
+    grmhd1: "/path/to/Ma+0.94_w5_Rh160_i30.hdf5"    # MAD, a*=+0.94, Rh=160, i=30deg
+    grmhd2: "/path/to/Ma+0.5_w5_Rh160_i150.hdf5"    # MAD, a*=+0.5,  Rh=160, i=150deg
+    grmhd3: "/path/to/grmhd3.hdf5"
+    grmhd4: "/path/to/grmhd4.hdf5"
+    grmhd5: "/path/to/grmhd5.hdf5"
+    grmhd6: "/path/to/grmhd6.hdf5"
+    grmhd7: "/path/to/grmhd7.hdf5"
+    grmhd8: "/path/to/grmhd8.hdf5"                  # MAD, a*=+0.94, Rh=40,  i=170deg
+
+# ─── Output ─────────────────────────────────────────────────
+output:
+  model_dir: "./models/april11_v4/"

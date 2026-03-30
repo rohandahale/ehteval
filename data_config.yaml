@@ -1,0 +1,128 @@
+# ============================================================
+# Synthetic Data Generation Configuration
+# ============================================================
+# This file fully specifies all parameters for reproducible
+# synthetic data generation. Save this alongside your outputs.
+# ============================================================
+
+# ─── Global Seeds ────────────────────────────────────────────
+seeds:
+  scattering_screen: 1    # rngseed for MakeEpsilonScreen
+  observation_noise: 1    # seed for simulated noise / gains
+  model_generation: 42    # seed for stochastic model components
+
+# ─── Observation Reference ───────────────────────────────────
+observation:
+  epoch: "3601"
+  mjd: 57854
+  uvfits_dir: "./realdata"
+  uvfits_files:
+    LO: "hops_3601_SGRA_LO_netcal_LMTcal_10s_ALMArot_JCcalDouble_dcal.uvfits"
+    HI: "hops_3601_SGRA_HI_netcal_LMTcal_10s_ALMArot_JCcalDouble_dcal.uvfits"
+  array_file: "./arrays/EHT2017.txt"
+  bands: ["LO", "HI"]
+
+# ─── Time Configuration ─────────────────────────────────────
+time:
+  tstart: 9.001389026641846
+  tstop: 15.015277862548828
+  tshift: 0.0
+  besttime_start: 10.85
+  besttime_stop: 14.05
+
+# ─── Corruption Settings ────────────────────────────────────
+corruption:
+  add_thermal_noise: true
+  ampcal: false          # False → add amplitude corruption
+  phasecal: false        # False → add phase corruption
+  dterm: false           # true → add polarization leakage
+  apply_scattering: true
+  rlgaincal: true
+
+# ─── Station Gains (from J1924 April 11) ────────────────────
+gains:
+  # Mean gain offset from unity
+  offset:
+    AA: 0.000
+    AP: 0.000
+    AZ: 0.000
+    JC: 0.000
+    LM: 0.000
+    SM: 0.000
+    SP: 0.000
+    SR: 0.0
+  # Standard deviation of gain fluctuations
+  sigma:
+    AA: 0.016
+    AP: 0.072
+    AZ: 0.059
+    JC: 0.047
+    LM: 0.108
+    SM: 0.008
+    SP: 0.054
+    SR: 0.0
+  # D-term offset standard deviation
+  dterm_offset:
+    AA: 0.005
+    AP: 0.005
+    AZ: 0.01
+    LM: 0.01
+    PV: 0.01
+    SM: 0.005
+    JC: 0.01
+    SP: 0.01
+    SR: 0.01
+
+# ─── Caltable ───────────────────────────────────────────────
+caltable:
+  dir: "./caltable_april11/"
+  generate_new: false     # if true, generate fresh caltable
+
+# ─── Pre-imaging Calibration ────────────────────────────────
+preimcal:
+  do_static_netcal: false
+  do_lc_netcal: true
+  zbl: 2.7
+  do_LMTcal: false
+  LMTcal_fwhm: 60.0
+  do_JCMTcal: false
+  tint_options: [60, 120]   # seconds
+  do_deblurr: false         # for onsky variant
+  do_psd_noise: false
+  syserr: -1
+  ref_optype: null          # for onsky
+  ref_scale: 1.0
+  do_timeflag: true
+  # Scattering mitigation variants
+  variants:
+    onsky:
+      do_deblurr: false
+      ref_optype: null
+    deblur:
+      do_deblurr: true
+      ref_optype: null
+    dsct:
+      do_deblurr: true
+      ref_optype: "quarter1"
+
+# ─── Model Parameters ───────────────────────────────────────
+models:
+  # Models to generate (list of model names referenced in recipes)
+  generate:
+    - point
+    - mring+hsCW
+    - mring+hsCCW
+    - mring-varbeta2
+
+
+
+# ─── Output ─────────────────────────────────────────────────
+output:
+  model_dir: "./models/april11_v4/"
+  data_dir: "./synthetic_data/april11_v4/"
+
+# ─── Computational Resources ────────────────────────────────
+compute:
+  n_workers: 1        # Number of parallel workers for batch processing
+  nproc_scatter: 32   # Processes for scattering computation
+  multiproc: false    # Use multiprocessing pool

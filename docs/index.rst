@@ -10,11 +10,13 @@ Black Hole Video Evaluation
    :target: https://opensource.org/licenses/MIT
    :alt: License
 
-**Evaluation tools for black hole video reconstructions from Event Horizon Telescope data.**
+**Evaluation and synthetic data tools for black hole video reconstructions from Event Horizon Telescope data.**
 
-This package provides metrics and visualization tools for evaluating dynamic 
-reconstructions of Sgr A* from EHT observations by comparing reconstructed 
-images/movies to ground truth and observational data.
+This package provides:
+
+- **Evaluation metrics** for comparing dynamic reconstructions of Sgr A* to ground truth
+- **Synthetic data generation** for creating realistic EHT observations from model videos
+- **Visualization tools** for inspecting models, synthetic data, and reconstructions
 
 
 .. toctree::
@@ -22,6 +24,7 @@ images/movies to ground truth and observational data.
    :caption: Documentation
 
    installation
+   syndata
    metrics
    usage
 

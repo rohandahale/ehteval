@@ -171,3 +171,7 @@ Manifest.toml
 TODO.md
 */TODO.md
 */*/TODO.md
+
+realdata/*
+models/*
+syntheticdata/*

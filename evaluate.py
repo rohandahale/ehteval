@@ -211,8 +211,12 @@ def main():
             preprocess_inputs = []
             
             # Use the visualization input (Mean file in Bayesian mode, single recon in others)
-            if visualize_input and os.path.exists(visualize_input):
-                preprocess_inputs.append(visualize_input)
+            #if visualize_input and os.path.exists(visualize_input):
+            #    preprocess_inputs.append(visualize_input)
+            
+            # Use ALL input files (all Bayesian samples or the single non-Bayesian file)
+            if input_arg:
+                preprocess_inputs.extend(input_arg)
             
             # Add Truth if applicable and exists
             if use_truth_for_model and os.path.exists(truth_path):
@@ -261,21 +265,6 @@ def main():
                 cmd = build_cmd('patternspeed.py', input_arg, out_prefix, use_truth=use_truth_for_model)
                 run_command(cmd, "Pattern Speed")
 
-        # e2) Pattern Speed v2
-        if config['run_steps'].get('patternspeed_v2', False):
-            # Create subfolder inside results directory
-            v2_dir = os.path.join(results_dir, "patternspeed_v2")
-            if not os.path.exists(v2_dir):
-                os.makedirs(v2_dir)
-            
-            v2_prefix = os.path.join(v2_dir, f"{model}_{pipeline}")
-            
-            if not overwrite and os.path.exists(f"{v2_prefix}_patternspeed_summary.png"):
-                print(f"Skipping Pattern Speed v2: Output {v2_prefix}_patternspeed_summary.png already exists.")
-            else:
-                cmd = build_cmd('patternspeed_v2.py', input_arg, v2_prefix, use_truth=use_truth_for_model)
-                run_command(cmd, "Pattern Speed v2")
-            
         # f) Rex
         if config['run_steps']['rex']:
              if not overwrite and os.path.exists(f"{out_prefix}_rex.csv"):

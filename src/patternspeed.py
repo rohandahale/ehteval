@@ -1,6 +1,5 @@
 ######################################################################
-# Author: Rohan Dahale, Date: 14 December 2025
-# Based on: Nick Conroy's cylinder.py
+# Author: Rohan Dahale, Nick Conroy, Date: 24 March 2026
 ######################################################################
 
 import os
@@ -82,11 +81,12 @@ class RingFitter:
         image_threshold = kwargs.pop('image_threshold', 0.05)
         
         # Find the center of the ring if not provided
+        # Use a large global search area for finding the center so it doesn't fail on shifted images
         if center_x is None or center_y is None:
             center_x, center_y = self._find_center(
                 image,
-                search_radius_min=search_radius_min,
-                search_radius_max=search_radius_max,
+                search_radius_min=10,
+                search_radius_max=100,
                 nrays_search=nrays_search,
                 nrs_search=nrs_search,
                 fov_search=fov_search,
@@ -96,7 +96,7 @@ class RingFitter:
             )
         
         # Extract all ring parameters with remaining kwargs
-        params = self._extract_ring_parameters(image, center_x, center_y, **kwargs)
+        params = self._extract_ring_parameters(image, center_x, center_y, min_radius=search_radius_min, max_radius=search_radius_max, **kwargs)
         
         # Calculate center coordinates relative to image center
         fov = kwargs.pop('fov', self.fov)
@@ -295,30 +295,68 @@ def sample_cylinder(sIall, ring_params, dx, x_shift=0, y_shift=0, r_shift=0):
 
 
 def compute_autocorrelation(qs):
-    # Normalize cylinder
-    qsn = np.copy(qs)
+    """
+    Compute centered autocorrelation function.
+    Cyclic in PA (angle wrapping via FFT), non-cyclic in time (no time wrapping).
+    Based on Nick Conroy's autocorr_unwrapped_fft method.
     
+    Input:  qs shape (Nt, Nphi) -- time x angle
+    Output: racf shape (2*Nt-1, Nphi) -- time-lag x angle-shift, peak normalized to 1
+            qsn shape (Nt, Nphi) -- mean-subtracted cylinder
+    """
     # Mean subtract
-    # Remove mean from each angle (column)
-    for i in range(qsn.shape[1]):
-        qsn[:, i] = qsn[:, i] - qsn[:, i].mean()
-    # Remove mean from each time (row)
-    for i in range(qsn.shape[0]):
-        qsn[i, :] = qsn[i, :] - qsn[i, :].mean()
+    qsn = np.copy(qs)
+    qsn -= qsn.mean(axis=0, keepdims=True)  # subtract temporal mean at each angle
+    qsn -= qsn.mean(axis=1, keepdims=True)  # subtract azimuthal mean at each time
+    
+    Nt, Nphi = qsn.shape
+    R = np.zeros((2 * Nt - 1, Nphi), dtype=float)
+    
+    for j in range(2 * Nt - 1):
+        tau_idx = j - (Nt - 1)  # time lag index
         
-    # FFT
-    qk = fft.fft2(qsn)
-    Pk = np.absolute(qk)**2
-    acf = np.real(fft.ifft2(Pk))
-    acf = acf / acf[0,0] # normalize
+        # Get overlapping time slices (no time wrapping)
+        if tau_idx >= 0:
+            f1 = qsn[:Nt - tau_idx, :]   # (noverlap, Nphi)
+            f2 = qsn[tau_idx:, :]         # (noverlap, Nphi)
+        else:
+            f1 = qsn[-tau_idx:, :]        # (noverlap, Nphi)
+            f2 = qsn[:Nt + tau_idx, :]    # (noverlap, Nphi)
+        
+        noverlap = f1.shape[0]
+        if noverlap == 0:
+            continue
+        
+        # FFT along angle axis (axis=1) for cyclic PA wrapping
+        FB = np.fft.fft(f1, axis=1)
+        FC = np.fft.fft(f2, axis=1)
+        cross = np.fft.ifft(FB * np.conj(FC), axis=1).real
+        
+        # Sum over overlapping time points -> (Nphi,)
+        numerator = cross.sum(axis=0)
+        
+        # Map FFT ordering to direct-sum ordering
+        numerator = np.roll(numerator[::-1], 1)
+        
+        # Per-lag normalization (prevents values > 1 at edges)
+        sigma1 = np.sqrt(np.mean(f1**2))
+        sigma2 = np.sqrt(np.mean(f2**2))
+        if sigma1 == 0 or sigma2 == 0:
+            continue
+        norm = Nphi * noverlap * sigma1 * sigma2
+        R[j, :] = numerator / norm
     
-    # Shift
-    shifti = int(acf.shape[0]/2.)
-    shiftj = int(acf.shape[1]/2.)
-    racf = np.roll(acf, (shifti, shiftj), axis=(0, 1))
+    # Center PA shifts so zero-shift is at the middle
+    R = np.roll(R, shift=-Nphi // 2, axis=1)
     
-    racf /= np.max(racf)
-    return racf, qsn
+    # Normalize peak to 1
+    max_val = np.max(R)
+    if max_val > 0:
+        R /= max_val
+
+    R = R[ (R.shape[0]//4) : (3*R.shape[0]//4) , : ]  ### NEW
+    
+    return R, qsn
 
 def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
 
@@ -333,26 +371,34 @@ def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
     
     # Check initial region width
     non_zero_columns = 0
+    non_zero_rows = 0
     if labels_map[center_idx] != 0:
          Q = labels_map == labels_map[center_idx]
          non_zero_columns = np.count_nonzero(np.sum(Q, axis=0))
+         non_zero_rows = np.count_nonzero(np.sum(Q, axis=1))
     
     # Fallback: if center not in threshold or region too thin (< 5 pixels)
-    if (labels_map[center_idx] == 0) or (non_zero_columns < 5):
+    if (labels_map[center_idx] == 0) or (non_zero_columns < 5) or (non_zero_rows < 5):
          target_width = 5
          col_offset = target_width // 2
+         row_offset = target_width // 2
          
-         # Determine edge column (ensure in bounds)
+         # Determine edge column/row (ensure in bounds)
          edge_col = min(center_idx[1] + col_offset, racf.shape[1] - 1)
+         edge_row = min(center_idx[0] + row_offset, racf.shape[0] - 1)
          
-         # Set xi_crit to max value at edge column to ensure width >= target_width
-         xi_crit = np.max(racf[:, int(edge_col)])
+         # Set xi_crit to max value at edge column/row to ensure width >= target_width
+         xi_crit_col = np.max(racf[:, int(edge_col)])
+         xi_crit_row = np.max(racf[int(edge_row), :])
+         xi_crit = min(xi_crit_col, xi_crit_row)
          
          # Restrict mask to target strip (mimicking cylinder.py fallback)
          col_indices = np.arange(racf.shape[1])
-         strip_mask = np.abs(col_indices - center_idx[1]) <= col_offset
+         row_indices = np.arange(racf.shape[0])
+         strip_mask_col = np.abs(col_indices - center_idx[1]) <= col_offset
+         strip_mask_row = np.abs(row_indices - center_idx[0]) <= row_offset
          
-         threshold_mask = (racf >= xi_crit) & strip_mask[np.newaxis, :]
+         threshold_mask = (racf >= xi_crit) & strip_mask_row[:, np.newaxis] & strip_mask_col[np.newaxis, :]
          mask_int = threshold_mask.astype(int)
          
          labels_map, num_features = label(mask_int)
@@ -394,28 +440,26 @@ def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
 def determine_xi_crit_factor(path):
     if 'truth' in path:
         if 'hs' in path:
-            return 2.0
+            return 1.67
         else:
-            return 3.0
-    elif 'modeling' in path:
-        return 0.6
+            return 2.25
     elif 'resolve' in path:
-        return 0.2
+        return 1.40
     elif 'doghit' in path:
-        return 1.2
+        return 0.30
     elif 'ehtim' in path:
-        return 0.6
+        return 0.40
     elif 'kine' in path:
-        return 0.6
+        return 0.30
     elif 'ngmem' in path:
-        return 0.4
+        return 0.25
     else:
         return 0.6
 
-def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, racf_best_std, is_truth=False):
+def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, racf_best_std):
     # Setup MCMC
     # Sigma fit from xi_crit RMSE curves
-    sigma = 0.7 
+    sigma = 0.7
     
     # Calculate base absolute threshold (mimicking cylinder.py logic)
     abs_base = xi_crit_factor_base * racf_best_std
@@ -483,7 +527,7 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, racf_be
 # -----------------------------------------------------------------------------
 # Main Processing
 # -----------------------------------------------------------------------------
-def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
+def process_movie(path, times, fov, npix, n_samples=0):
     # Load movie
     mv = eh.movie.load_hdf5(path)
     
@@ -539,7 +583,7 @@ def process_movie(path, times, fov, npix, n_samples=0, is_truth=False):
         print(f"Running MCMC with {n_samples} samples...")
         # Calculate std of the best-bet racf for MCMC baseline
         racf_best_std = np.std(racf)
-        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor, racf_best_std=racf_best_std, is_truth=is_truth)
+        mcmc_res = run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor, racf_best_std=racf_best_std)
     
     return {
         'mean_im': mean_im,
@@ -876,6 +920,8 @@ def main():
     npix = 200
     fov = 200 * eh.RADPERUAS
     
+
+
     # --- Parallel Processing ---
     max_workers = args.ncores
     print(f"Starting parallel processing with {max_workers} workers...")
@@ -885,8 +931,7 @@ def main():
                                      times=obs_times, 
                                      fov=fov, 
                                      npix=npix, 
-                                     n_samples=args.nsamples, 
-                                     is_truth=False)
+                                     n_samples=args.nsamples)
 
     recon_results_list = []
     # If single file and 1 core, avoid pool overhead? Not critical, but safe.
@@ -974,18 +1019,14 @@ def main():
         agg['qs_norm'] = np.mean(all_qs_norm, axis=0)
         
         # Mask - Recompute based on mean racf
-        racf_std = np.std(agg['racf'])
         if input_files:
             xi_crit_factor = determine_xi_crit_factor(input_files[0])
         else:
             xi_crit_factor = 0.6
-        xi_crit = xi_crit_factor * racf_std
-        labels_map, _ = label((agg['racf'] > xi_crit).astype(int))
-        center_idx = (agg['racf'].shape[0]//2, agg['racf'].shape[1]//2)
-        if labels_map[center_idx] != 0:
-             agg['mask'] = labels_map == labels_map[center_idx]
-        else:
-             agg['mask'] = np.zeros_like(agg['racf'], dtype=bool)
+            
+        agg_dt = res_list[0]['dt'] if 'dt' in res_list[0] else 1.0
+        _, _, mask = calculate_pattern_speed(agg['racf'], agg_dt, dtheta=2.0, xi_crit_factor=xi_crit_factor)
+        agg['mask'] = mask
 
         return agg
 
@@ -996,7 +1037,7 @@ def main():
     if args.truthmv:
         print(f"Processing Truth: {args.truthmv}")
         # Truth usually single file
-        truth_res = process_movie(args.truthmv, obs_times, fov, npix, n_samples=args.nsamples, is_truth=True)
+        truth_res = process_movie(args.truthmv, obs_times, fov, npix, n_samples=args.nsamples)
         
     print(f"Saving results to {args.outpath}...")
     plot_results(args.outpath, final_recon_res, truth_res)

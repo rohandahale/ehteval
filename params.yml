@@ -102,7 +102,6 @@ run_steps:
   hotspot: True
   nxcorr: True
   patternspeed: True
-  patternspeed_v2: True
   rex: True
   vida_pol: True
   vizualize: True

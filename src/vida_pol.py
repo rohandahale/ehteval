@@ -463,22 +463,21 @@ def main():
         abs_thresholds = {
             'd': 5.0,
             'w': 5.0,
-            'beta2_angle': 26.0,
             'evpa': 26.0
         }
-        
+
         rel_thresholds = ['true_D', 'A']
         # Pol magnitudes 10%
-        pol_mags = ['m_net', 'm_avg', 'beta2_abs', 'v_net'] 
+        pol_mags = ['m_net', 'm_avg', 'beta2_abs', 'v_net']
         for pm in pol_mags:
              suffix_check = '_mean' if is_bayesian else ''
              if f'{pm}{suffix_check}' in final_df.columns:
                  rel_thresholds.append(pm)
-                 
+
         metrics_to_check = ['d', 'w', 'beta2_angle', 'PA']
         metrics_to_check.extend(rel_thresholds)
-        
-        # PA Threshold
+
+        # PA Threshold modulated by amplitude A
         A0 = 0.7184071604180173
         pa_threshold0 = 26.0
         if 'A_truth' in final_df.columns:
@@ -486,21 +485,34 @@ def main():
              truth_A_safe = np.where(truth_A == 0, 1e-6, truth_A)
              pa_threshold_arr = pa_threshold0 * A0 / truth_A_safe
              threshold_arrays['PA'] = pa_threshold_arr
-        
+
+        # beta2_angle threshold modulated by beta2_abs, floored at 26
+        beta2_abs_0 = 0.05
+        beta2_angle_threshold0 = 26.0
+        beta2_angle_threshold_arr = None
+        if 'beta2_abs_truth' in final_df.columns:
+             truth_beta2_abs = final_df['beta2_abs_truth']
+             truth_beta2_abs_safe = np.where(truth_beta2_abs == 0, 1e-6, truth_beta2_abs)
+             beta2_angle_threshold_arr = beta2_angle_threshold0 * beta2_abs_0 / truth_beta2_abs_safe
+             beta2_angle_threshold_arr = np.maximum(beta2_angle_threshold_arr, beta2_angle_threshold0)
+             threshold_arrays['beta2_angle'] = beta2_angle_threshold_arr
+
         for metric in metrics_to_check:
             recon_col = f'{metric}_mean' if is_bayesian else metric
             truth_col = f'{metric}_truth'
             std_col = f'{metric}_std'
-            
+
             if recon_col not in final_df.columns or truth_col not in final_df.columns:
                 continue
-                
+
             recon_val = final_df[recon_col]
             truth_val = final_df[truth_col]
-            
+
             # Threshold
             if metric == 'PA':
                 thres = pa_threshold_arr
+            elif metric == 'beta2_angle' and beta2_angle_threshold_arr is not None:
+                thres = beta2_angle_threshold_arr
             elif metric in abs_thresholds:
                 thres = np.full_like(truth_val, abs_thresholds[metric])
             elif metric in rel_thresholds:

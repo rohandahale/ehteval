@@ -362,13 +362,11 @@ def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
 
     racf_std = np.std(racf)
     xi_crit = xi_crit_factor * racf_std
-    
-    racf_cut = np.copy(racf)
-    
+
     # Filter connected region
     labels_map, num_features = label((racf > xi_crit).astype(int))
     center_idx = (racf.shape[0]//2, racf.shape[1]//2)
-    
+
     # Check initial region width
     non_zero_columns = 0
     non_zero_rows = 0
@@ -376,75 +374,104 @@ def calculate_pattern_speed(racf, dt, dtheta=2.0, xi_crit_factor=3.0):
          Q = labels_map == labels_map[center_idx]
          non_zero_columns = np.count_nonzero(np.sum(Q, axis=0))
          non_zero_rows = np.count_nonzero(np.sum(Q, axis=1))
-    
-    # Fallback: if center not in threshold or region too thin (< 5 pixels)
-    if (labels_map[center_idx] == 0) or (non_zero_columns < 5) or (non_zero_rows < 5):
-         target_width = 5
+
+    # Fallback 1: if center not in threshold or region too thin (< 5 pixels)
+    target_width = 5
+    if (labels_map[center_idx] == 0) or (non_zero_columns < target_width) or (non_zero_rows < target_width):
          col_offset = target_width // 2
          row_offset = target_width // 2
-         
-         # Determine edge column/row (ensure in bounds)
-         edge_col = min(center_idx[1] + col_offset, racf.shape[1] - 1)
-         edge_row = min(center_idx[0] + row_offset, racf.shape[0] - 1)
-         
-         # Set xi_crit to max value at edge column/row to ensure width >= target_width
-         xi_crit_col = np.max(racf[:, int(edge_col)])
-         xi_crit_row = np.max(racf[int(edge_row), :])
-         xi_crit = min(xi_crit_col, xi_crit_row)
-         
-         # Restrict mask to target strip (mimicking cylinder.py fallback)
-         col_indices = np.arange(racf.shape[1])
-         row_indices = np.arange(racf.shape[0])
-         strip_mask_col = np.abs(col_indices - center_idx[1]) <= col_offset
-         strip_mask_row = np.abs(row_indices - center_idx[0]) <= row_offset
-         
-         threshold_mask = (racf >= xi_crit) & strip_mask_row[:, np.newaxis] & strip_mask_col[np.newaxis, :]
-         mask_int = threshold_mask.astype(int)
-         
-         labels_map, num_features = label(mask_int)
-         
-         # Final safety check
-         if labels_map[center_idx] == 0:
-              return 0.0, np.zeros_like(racf), np.zeros_like(labels_map, dtype=bool)
 
-         Q = labels_map == labels_map[center_idx]
+         # Determine edge column/row (ensure in bounds)
+         edge_col_idx = min(center_idx[1] + col_offset, racf.shape[1] - 1)
+         edge_row_idx = min(center_idx[0] + row_offset, racf.shape[0] - 1)
+         edge_row = racf[edge_row_idx, :]
+         edge_col = racf[:, edge_col_idx]
+         unique_edge_vals = np.unique(np.concatenate([edge_row, edge_col]))[::-1]
+         unique_edge_vals = unique_edge_vals[unique_edge_vals <= xi_crit]
+
+         # Loop through values on edges from highest to lowest until we get
+         # target_width in both dimensions (connected to center)
+         for candidate_xi in unique_edge_vals:
+                threshold_mask = (racf >= candidate_xi)
+                mask_int = threshold_mask.astype(int)
+
+                labels_map, num_features = label(mask_int)
+
+                # Final safety check
+                if labels_map[center_idx] == 0:
+                    return 0.0, np.zeros_like(racf), np.zeros_like(labels_map, dtype=bool)
+
+                Q = labels_map == labels_map[center_idx]
+
+                non_zero_columns = np.count_nonzero(np.sum(Q, axis=0))
+                non_zero_rows = np.count_nonzero(np.sum(Q, axis=1))
+
+                if (non_zero_columns >= target_width) and (non_zero_rows >= target_width):
+                    xi_crit = candidate_xi
+                    break
+
     else:
          Q = labels_map == labels_map[center_idx]
-    
+
+    # Fallback 2: phi wrapping if xi_crit region spans all values of phi
+    non_zero_columns = np.count_nonzero(np.sum(Q, axis=0))
+    if non_zero_columns == len(racf[0]):
+        # Concatenate racf on the Delta-phi axis to allow the peak to wrap
+        racf_cut = np.concatenate([racf, racf, racf], axis=1)
+
+        center_wrap = (center_idx[0], center_idx[1] + len(racf[0]))
+        labels_wrap, _ = label((racf_cut > xi_crit).astype(int))
+
+        if labels_wrap[center_wrap] == 0:
+            return 0.0, np.zeros_like(racf), np.zeros_like(racf, dtype=bool)
+
+        Q_wrap = labels_wrap == labels_wrap[center_wrap]
+
+        # Redefine Q by folding the wrapped mask back onto the original phi axis
+        Q = (
+            Q_wrap[:, :len(racf[0])]
+            | Q_wrap[:, len(racf[0]):2 * len(racf[0])]
+            | Q_wrap[:, 2 * len(racf[0]):3 * len(racf[0])]
+        )
+
+        # Apply mask
+        racf_cut[~Q_wrap] = 0.0
+    else:
+        racf_cut = np.copy(racf)
+
+        # Apply mask
+        racf_cut[~Q] = 0.0
+
+
     # Moments
-    ts = np.linspace(-len(racf)/2, len(racf)/2, len(racf), endpoint=False)
-    phis = np.linspace(-len(racf[0])/2, len(racf[0])/2, len(racf[0]), endpoint=False)
-    
+    ts = np.linspace(-len(racf_cut)/2, len(racf_cut)/2, len(racf_cut), endpoint=False)
+    phis = np.linspace(-len(racf_cut[0])/2, len(racf_cut[0])/2, len(racf_cut[0]), endpoint=False)
+
     delta_t = ts[1] - ts[0]
     delta_phi = phis[1] - phis[0]
-    
+
     # Meshgrid
     T_mesh, Phi_mesh = np.meshgrid(ts, phis, indexing='ij')
-    
-    # Apply mask
-    racf_cut[~Q] = 0.0
-    
+
+
     # Weighted sums
     moment_t = np.sum(racf_cut * T_mesh**2)
     moment_t_phi = np.sum(racf_cut * T_mesh * Phi_mesh)
-    
+
     if moment_t == 0:
         pattern_speed = 0
     else:
         pattern_speed = moment_t_phi / moment_t
         # Units
         pattern_speed = pattern_speed * dtheta / dt
-        
+
     return pattern_speed, racf_cut, Q
 
 def determine_xi_crit_factor(path):
     if 'truth' in path:
-        if 'hs' in path:
-            return 1.67
-        else:
-            return 2.25
+        return 2.25
     elif 'resolve' in path:
-        return 1.40
+        return 0.50
     elif 'doghit' in path:
         return 0.30
     elif 'ehtim' in path:
@@ -452,7 +479,7 @@ def determine_xi_crit_factor(path):
     elif 'kine' in path:
         return 0.30
     elif 'ngmem' in path:
-        return 0.25
+        return 0.35
     else:
         return 0.6
 
@@ -471,7 +498,7 @@ def run_mcmc(sIall, ring_params, dx, dt, n_samples, xi_crit_factor_base, racf_be
     
     # Perturb Ring Parameters (x, y, r)
     # rerr is used for std of x, y, r perturbation
-    rerr = ring_params.get('r_err', 1.0) # default if missing
+    rerr = ring_params.get('r_err', 1.0)*2.5 # default if missing
     
     x_factor_samples = np.random.normal(0, rerr, n_samples)
     y_factor_samples = np.random.normal(0, rerr, n_samples)

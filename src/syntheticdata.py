@@ -94,21 +94,104 @@ def load_obs_ref(uvfits_path: str,
 #  Scattering
 # ═══════════════════════════════════════════════════════════════════════
 
+def _ensemble_blur_movie(mov, scattering_model) -> 'eh.movie.Movie':
+    """Apply only the ensemble-average (diffractive) blur to each frame."""
+    N = mov.xdim
+    has_pol = len(mov.qframes) > 0
+    has_v = len(mov.vframes) > 0
+
+    blurred = []
+    for j in range(len(mov.frames)):
+        im = eh.image.Image(mov.frames[j].reshape((N, N)),
+                            psize=mov.psize, ra=mov.ra, dec=mov.dec,
+                            rf=mov.rf, pulse=mov.pulse,
+                            source=mov.source, mjd=mov.mjd)
+        if has_pol:
+            im.add_qu(mov.qframes[j].reshape((N, N)),
+                      mov.uframes[j].reshape((N, N)))
+        if has_v:
+            im.add_v(mov.vframes[j].reshape((N, N)))
+        blurred.append(scattering_model.Ensemble_Average_Blur(im))
+
+    mov_blur = eh.movie.Movie(
+        [im.imvec.reshape((im.xdim, im.ydim)) for im in blurred],
+        times=mov.times, psize=mov.psize, ra=mov.ra, dec=mov.dec,
+        rf=mov.rf, pulse=mov.pulse, source=mov.source, mjd=mov.mjd)
+    if has_pol:
+        mov_blur.add_qu(
+            [im.qvec.reshape((im.xdim, im.ydim)) for im in blurred],
+            [im.uvec.reshape((im.xdim, im.ydim)) for im in blurred])
+    if has_v:
+        mov_blur.add_v(
+            [im.vvec.reshape((im.xdim, im.ydim)) for im in blurred])
+    return mov_blur
+
+
 def apply_scattering(mov, rngseed: int = 1,
-                     nproc: int = 32) -> 'eh.movie.Movie':
-    """Apply diffractive blur + refractive screen to a movie.
+                     nproc: int = 32,
+                     scattering_type: str = 'both') -> 'eh.movie.Movie':
+    """Apply interstellar scattering to a movie.
 
     Args:
         mov: input ehtim.Movie.
         rngseed: seed for the epsilon screen.
         nproc: number of processes for scattering computation.
+        scattering_type: which component(s) of scattering to apply:
+            - 'both' (default): diffractive blur + refractive substructure
+              (full Johnson & Narayan 2016 scattering).
+            - 'diffractive': only the ensemble-average blur (no substructure).
+            - 'refractive': only refractive substructure on the unblurred
+              image, computed as I_unscat + (I_full - I_EA).
 
     Returns:
         Scattered ehtim.Movie.
     """
-    eps = so.MakeEpsilonScreen(mov.xdim, mov.ydim, rngseed=rngseed)
+    valid = ('both', 'diffractive', 'refractive')
+    if scattering_type not in valid:
+        raise ValueError(
+            f"scattering_type must be one of {valid}, got '{scattering_type}'")
+
     scattering_model = so.ScatteringModel()
-    mov_scat = scattering_model.Scatter_Movie(mov, eps, processes=nproc)
+
+    if scattering_type == 'both':
+        eps = so.MakeEpsilonScreen(mov.xdim, mov.ydim, rngseed=rngseed)
+        mov_scat = scattering_model.Scatter_Movie(mov, eps, processes=nproc)
+        mov_scat.reset_interp(bounds_error=False)
+        return mov_scat
+
+    if scattering_type == 'diffractive':
+        mov_scat = _ensemble_blur_movie(mov, scattering_model)
+        mov_scat.reset_interp(bounds_error=False)
+        return mov_scat
+
+    # 'refractive': substructure only — add (full − EA) to the unblurred movie
+    eps = so.MakeEpsilonScreen(mov.xdim, mov.ydim, rngseed=rngseed)
+    mov_full = scattering_model.Scatter_Movie(mov, eps, processes=nproc)
+    mov_ea = _ensemble_blur_movie(mov, scattering_model)
+
+    N = mov.xdim
+    has_pol = len(mov.qframes) > 0
+    has_v = len(mov.vframes) > 0
+
+    I_frames = [
+        (mov.frames[j] + mov_full.frames[j] - mov_ea.frames[j]).reshape((N, N))
+        for j in range(len(mov.frames))]
+    mov_scat = eh.movie.Movie(
+        I_frames, times=mov.times, psize=mov.psize, ra=mov.ra, dec=mov.dec,
+        rf=mov.rf, pulse=mov.pulse, source=mov.source, mjd=mov.mjd)
+    if has_pol:
+        Q_frames = [(mov.qframes[j] + mov_full.qframes[j]
+                     - mov_ea.qframes[j]).reshape((N, N))
+                    for j in range(len(mov.frames))]
+        U_frames = [(mov.uframes[j] + mov_full.uframes[j]
+                     - mov_ea.uframes[j]).reshape((N, N))
+                    for j in range(len(mov.frames))]
+        mov_scat.add_qu(Q_frames, U_frames)
+    if has_v:
+        V_frames = [(mov.vframes[j] + mov_full.vframes[j]
+                     - mov_ea.vframes[j]).reshape((N, N))
+                    for j in range(len(mov.frames))]
+        mov_scat.add_v(V_frames)
     mov_scat.reset_interp(bounds_error=False)
     return mov_scat
 
@@ -378,6 +461,7 @@ def make_synthetic_dataset(
         tstop: float = 15.0,
         tshift: float = 0.0,
         apply_scat: bool = True,
+        scattering_type: str = 'both',
         rngseed: int = 1,
         seed: int = 1,
         add_th_noise: bool = True,
@@ -400,6 +484,8 @@ def make_synthetic_dataset(
         tstart, tstop: UT hours for time window.
         tshift: time offset for source movie.
         apply_scat: whether to apply scattering.
+        scattering_type: 'both' (default), 'diffractive', or 'refractive'.
+            Ignored when apply_scat is False.
         rngseed: seed for scattering screen.
         seed: seed for observation noise.
         add_th_noise: add thermal noise.
@@ -445,8 +531,9 @@ def make_synthetic_dataset(
 
     # Apply scattering
     if apply_scat:
-        print("  Applying scattering")
-        mov_scat = apply_scattering(mov, rngseed=rngseed, nproc=nproc_scatter)
+        print(f"  Applying scattering (type={scattering_type})")
+        mov_scat = apply_scattering(mov, rngseed=rngseed, nproc=nproc_scatter,
+                                    scattering_type=scattering_type)
     else:
         mov_scat = mov
     del mov
